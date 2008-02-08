@@ -29,7 +29,7 @@ mkdir -p "$compilePackedRecipesDir"
 [ "$compileSubversionLocalTrunk" ] || compileSubversionLocalTrunk="$goboPrefix/Files/Compile/Subversion/trunk"
 mkdir -p "$compileSubversionLocalTrunk"
 
-if [ -z "$SVN_EDITOR" -a -z "$VISUAL" -a -z "$EDITOR" ]
+if ! Is_Entry "message" && [ -z "$SVN_EDITOR" -a -z "$VISUAL" -a -z "$EDITOR" ]
 then
    Die "Please set one of SVN_EDITOR, VISUAL or EDITOR environment variables before running this script"
 fi
@@ -55,6 +55,7 @@ else
    fi
 fi
 
+cd $compileLocalRecipesDir
 [ -d "$entry" ] || Die "Could not read $entry."
 
 program=`basename $entry`
