@@ -79,19 +79,20 @@ function do_fetch() {
      fi
    fi
    
+   retval=0
    existingprogram=`ls "$localdir" 2> /dev/null | grep -i "^$program$"`
    if [ ! "$existingprogram" ]
    then
       Log_Normal "Trying to checkout $repo/$program..."
       Quiet pushd $localdir
       svn checkout "$compileSubversionServerRepository/$repo/$program"
+	  retval=$?
       Quiet popd
-      checkedout=yes
    else
       Log_Normal "Updating local subversion copy..."
       svn update "$localdir/$program"
    fi
+   return $retval
 }
 
-do_fetch "trunk"
-do_fetch "revisions"
+do_fetch "trunk" && do_fetch "revisions"
