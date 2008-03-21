@@ -28,6 +28,8 @@ mkdir -p "$compileLocalRecipesDir"
 mkdir -p "$compilePackedRecipesDir"
 [ "$compileSubversionLocalTrunk" ] || compileSubversionLocalTrunk="$goboPrefix/Files/Compile/Subversion/trunk"
 mkdir -p "$compileSubversionLocalTrunk"
+[ "$compileSubversionLocalRevisions" ] || compileSubversionLocalRevisions="$goboPrefix/Files/Compile/Subversion/revisions"
+mkdir -p "$compileSubversionLocalRevisions"
 
 if [ -z "$SVN_EDITOR" -a -z "$VISUAL" -a -z "$EDITOR" ]
 then
@@ -109,6 +111,13 @@ then
    then PublishRevision --message "$(Entry "message")" --skip-lint $program $version || exit 1
    else PublishRevision --skip-lint $program $version || exit 1
    fi
+   postinstall=$program/$version/Resources/PostInstall
+   for localdir in $compileSubversionLocalTrunk $compileSubversionLocalRevisions
+   do
+       if [ -e $localdir/$postinstall ]
+       then svn propset svn:executable true $localdir/$postinstall
+       fi
+   done
 else
    Log_Normal "No differences. Will not publish a revision."
 fi
