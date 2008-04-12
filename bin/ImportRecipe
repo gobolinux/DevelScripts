@@ -7,6 +7,7 @@ Import GoboLinux
 Import File
 Import Subversion
 Import OptionParser
+Import Archive
 
 ### Options ###################################################################
 
@@ -72,7 +73,7 @@ fi
 ### Unpack recipe #############################################################
 
 unpackdir=`Temporary_Dir` || Die "Could not create temporary directory."
-Verbose aunpack --extract-to="$unpackdir" "$recipetarball"
+Verbose Unpack_Archive --extract-to="$unpackdir" "$recipetarball"
 
 if Is_Entry_Set "rename"
 then
