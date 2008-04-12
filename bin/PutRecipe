@@ -39,8 +39,16 @@ fi
 entry="$(Arg 1)"
 version="$(Arg 2)"
 
+
+# If it's a URL, fetch it and uncompress it
+if [ "$entry" != "${entry#http://*}" ]
+then
+   wget -P $goboTemp "$entry"
+   file="$goboTemp/$(basename $entry)"
+   entry=`aunpack $file --extract-to=$compileLocalRecipesDir | cut -d/ -f1 | head -n 1`
+   rm -f $file
 # Uncompress the file if it's a tarball
-if file $entry | grep -q bzip2
+elif file $entry | grep -q bzip2
 then 
    entry=`aunpack $entry --extract-to=$compileLocalRecipesDir | cut -d/ -f1 | head -n 1`
 # Get path from LocalRecipes if only a name is given
