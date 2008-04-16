@@ -73,7 +73,7 @@ fi
 ### Unpack recipe #############################################################
 
 unpackdir=`Temporary_Dir` || Die "Could not create temporary directory."
-Verbose Unpack_Archive --extract-to="$unpackdir" "$recipetarball"
+Verbose Unpack_Archive "$recipetarball" "$unpackdir"
 
 if Is_Entry_Set "rename"
 then
