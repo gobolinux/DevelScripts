@@ -109,9 +109,8 @@ version=`basename $tarball | sed 's,\(.*\)--\(.*\)--.*,\2,g'`
 # Merge the recipe into the local trunk
 ImportRecipe $tarball || exit 1
 
-Quiet pushd $compileSubversionLocalTrunk/$program/$version
-contextlines=`svn diff --non-interactive | wc -l`
-Quiet popd
+contextlines=$(svn diff --non-interactive $compileSubversionLocalTrunk/$program/$version | wc -l)
+
 programlist="$program $programlist"
 if [ $contextlines -ne 0 ]
 then
