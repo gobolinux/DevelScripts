@@ -23,13 +23,13 @@ Parse_Options "$@"
 
 ### Operation #################################################################
 
-[ "$compileLocalRecipesDir" ] || compileLocalRecipesDir="$goboPrefix/Files/Compile/LocalRecipes"
+[ "$compileLocalRecipesDir" ] || compileLocalRecipesDir="$goboData/Compile/LocalRecipes"
 mkdir -p "$compileLocalRecipesDir"
-[ "$compilePackedRecipesDir" ] || compilePackedRecipesDir="$goboPrefix/Files/Compile/PackedRecipes"
+[ "$compilePackedRecipesDir" ] || compilePackedRecipesDir="$goboData/Compile/PackedRecipes"
 mkdir -p "$compilePackedRecipesDir"
-[ "$compileSubversionLocalTrunk" ] || compileSubversionLocalTrunk="$goboPrefix/Files/Compile/Subversion/trunk"
+[ "$compileSubversionLocalTrunk" ] || compileSubversionLocalTrunk="$goboData/Compile/Subversion/trunk"
 mkdir -p "$compileSubversionLocalTrunk"
-[ "$compileSubversionLocalRevisions" ] || compileSubversionLocalRevisions="$goboPrefix/Files/Compile/Subversion/revisions"
+[ "$compileSubversionLocalRevisions" ] || compileSubversionLocalRevisions="$goboData/Compile/Subversion/revisions"
 mkdir -p "$compileSubversionLocalRevisions"
 
 if [ -z "$SVN_EDITOR" -a -z "$VISUAL" -a -z "$EDITOR" ]
@@ -100,7 +100,7 @@ then
    version=$newversion
 fi
 
-# Create a tarball and store it at /Files/Compile/PackedRecipes
+# Create a tarball and store it at $goboData/Compile/PackedRecipes
 PackRecipe $program $version || exit 1
 
 tarball=${compilePackedRecipesDir}/${program}--${version}--recipe.tar.bz2
