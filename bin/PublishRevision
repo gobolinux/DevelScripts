@@ -53,8 +53,9 @@ function publish_revision() {
    then
       latest=`cd "$revisions/$program"; ls -d "$prefix"* | cut -b$[${#prefix}+1]- | sort -nr | head -n1`
       revision=$[latest+1]
-      
-      if [ `diff -Nur --exclude .svn "$revisions/$program/$version-r$latest" "$trunk/$program/$version" | wc -l` = 0 ]
+      revisiondir="$revisions/$program/$version-r$latest"
+      needs_commit=`svn status "$revisiondir" | grep -q ^A && echo "yes" || echo "no"`
+      if [ "$needs_commit" = "no" ] && [ `diff -Nur --exclude .svn "$revisiondir" "$trunk/$program/$version" | wc -l` = 0 ]
       then
          Log_Verbose "There are no differences between the trunk and the latest revision (r$latest)."
          Log_Verbose "Will not publish a new revision for $program $version."
