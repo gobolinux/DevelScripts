@@ -40,7 +40,6 @@ fi
 entry="$(Arg 1)"
 version="$(Arg 2)"
 
-
 # If it's a URL, fetch it and uncompress it
 if [ "$entry" != "${entry#http://*}" ]
 then
@@ -49,7 +48,7 @@ then
    entry=`Unpack_Archive $file $compileLocalRecipesDir | cut -d/ -f1 | head -n 1`
    rm -f $file
 # Uncompress the file if it's a tarball
-elif file $entry | grep -q bzip2
+elif file $entry | grep -q bzip2\ compressed\ data
 then 
    entry=`Unpack_Archive $entry $compileLocalRecipesDir | cut -d/ -f1 | head -n 1`
 # Get path from LocalRecipes if only a name is given
