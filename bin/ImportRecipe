@@ -19,6 +19,7 @@ scriptExample="Glibc--2.5--recipe.tar.bz2"
 #scriptNotes="add notes here if any."
 #Add_Option_Boolean "b" "bool" "A boolean option."
 Add_Option_Entry "r" "rename" "Rename program to <entry>."
+Add_Option_Boolean "" "batch" "Operate without prompting."
 #Add_Option_List "l" "list" "Enter a colon-separated list of..." "foo:bar"
 Parse_Options "$@"
 
@@ -87,7 +88,7 @@ fi
 unset checkedout
 if ! trunk=`Get_Local_Trunk`
 then 
-   if Ask "You don't seem to have a copy of the svn trunk tree. Fetch it?"
+   if Boolean batch || Ask "You don't seem to have a copy of the svn trunk tree. Fetch it?"
    then
       Log_Normal "Calling 'svn checkout'."
       mkdir -p ${compileSubversionLocalDir}
@@ -146,12 +147,12 @@ then
          exit 0
       fi
       Log_Terse "Latest version in trunk is already $version."
-      Ask_Continue "Will display differences."
+      Boolean batch || Ask_Continue "Will display differences."
       diff -Naur --exclude=".svn" "$oldrecipedir" "$unpackrecipedir" | Color_Output diff
-      Ask_Continue "Proceed and overwrite with given recipe?"
+      Boolean batch || Ask_Continue "Proceed and overwrite with given recipe?"
    elif [ $(GuessLatest $latestexisting $version) != $version ]
    then
-      Ask_Continue "Latest version in trunk ($latestexisting) seems more recent than recipe ($version). Add $version to trunk anyway?"
+      Boolean batch || Ask_Continue "Latest version in trunk ($latestexisting) seems more recent than recipe ($version). Add $version to trunk anyway?"
    fi
    
    # Create newrecipedir if it's a new version
@@ -178,7 +179,7 @@ then
       svn add "$entry"
    done
 
-   if [ $latestexisting != $version ] && Ask "View differences in new version?"
+   if [ $latestexisting != $version ] && { Boolean batch || Ask "View differences in new version?" ; }
    then Subversion_Diff "$newrecipedir"
    fi
 
@@ -187,10 +188,10 @@ then
    Subversion_Status "$newrecipedir"
 else
    Log_Terse "No existing versions for $program were found."
-   Ask_Continue "Add new program $program to the recipes trunk?"
+   Boolean batch || Ask_Continue "Add new program $program to the recipes trunk?"
    cp -af "$unpackdir/$program" "$trunk"
    svn add "$trunk/$program"
-   if Ask "View contents of new entry in trunk?"
+   if Boolean batch || Ask "View contents of new entry in trunk?"
    then Subversion_Diff "$trunk/$program"
    fi
    # Exhibit a status summary for copy-n-paste convenience

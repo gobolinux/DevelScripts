@@ -19,6 +19,7 @@ helpOnNoArguments=yes
 scriptUsage="[ -m 'message' ] { <recipe dir> | <recipe name> [<recipe version>] }"
 scriptExample="firefox"
 Add_Option_Entry "m" "message" "Enter a commit message." ""
+Add_Option_Boolean "" "batch" "Operate without prompting."
 Parse_Options "$@"
 
 ### Operation #################################################################
@@ -106,7 +107,7 @@ tarball=${compilePackedRecipesDir}/${program}--${version}--recipe.tar.bz2
 
 version=`basename $tarball | sed 's,\(.*\)--\(.*\)--.*,\2,g'`
 # Merge the recipe into the local trunk
-ImportRecipe $tarball || exit 1
+ImportRecipe $(Boolean batch && echo "--batch") $tarball || exit 1
 
 contextlines=$(svn diff --non-interactive $compileSubversionLocalTrunk/$program/$version | wc -l)
 
@@ -115,8 +116,8 @@ if [ $contextlines -ne 0 ]
 then
    # Commit the trunk and/or the revision tree.
    if Is_Entry "message"
-   then PublishRevision --message "$(Entry "message")" --skip-lint $program $version || exit 1
-   else PublishRevision --skip-lint $program $version || exit 1
+   then PublishRevision $(Boolean batch && echo "--batch") --message "$(Entry "message")" --skip-lint $program $version || exit 1
+   else PublishRevision $(Boolean batch && echo "--batch") --skip-lint $program $version || exit 1
    fi
    postinstall=$program/$version/Resources/PostInstall
    for localdir in $compileSubversionLocalTrunk $compileSubversionLocalRevisions
