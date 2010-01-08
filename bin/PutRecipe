@@ -44,7 +44,9 @@ version="$(Arg 2)"
 # If it's a URL, fetch it and uncompress it
 if [ "$entry" != "${entry#http://*}" ]
 then
-   wget -P $goboTemp "$entry"
+   wget --header='Accept: application/x-gobo-recipe, application/x-bzip2;q=0.9, */*;q=0.1' -P $goboTemp "$entry"
+   version="${entry#*--}"
+   version="${version%.tar.bz2}"
    file="$goboTemp/$(basename $entry)"
    entry=`Unpack_Archive $file $compileLocalRecipesDir | cut -d/ -f1 | head -n 1`
    rm -f $file
