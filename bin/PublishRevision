@@ -115,6 +115,8 @@ function publish_revision() {
       fi
    fi
 
+   svn cleanup "$appdir"
+   Quiet svn update "$appdir"
    svn copy "$appdir" "$revisions/$program/$version-r$revision"
    
    if [ `ls "$revisions/$program" | wc -l` -eq 1 ]
