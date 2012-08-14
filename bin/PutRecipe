@@ -19,6 +19,7 @@ helpOnNoArguments=yes
 scriptUsage="[ -m 'message' ] { <recipe dir> | <recipe name> [<recipe version>] }"
 scriptExample="firefox"
 Add_Option_Entry "m" "message" "Enter a commit message." ""
+Add_Option_Boolean "L" "no-lint" "Don't use RecipeLint. (not recommended)" ""
 Add_Option_Boolean "" "batch" "Operate without prompting."
 Parse_Options "$@"
 
@@ -103,7 +104,11 @@ then
 fi
 
 # Create a tarball and store it at $goboData/Compile/PackedRecipes
-PackRecipe $program $version || exit 1
+if Is_Entry "no-lint"
+then packoptions="--no-lint"
+else packoptions=
+fi
+PackRecipe $packoptions $program $version || exit 1
 
 tarball=${compilePackedRecipesDir}/${program}--${version}--recipe.tar.bz2
 
