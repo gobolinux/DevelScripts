@@ -1,11 +1,12 @@
-#!/bin/bash
+#!/bin/sh
 export CPLUS_INCLUDE_PATH=/home/gobolinux/Rootless/System/Links/Headers
 export C_INCLUDE_PATH=/home/gobolinux/Rootless/System/Links/Headers
 export HOME=/home/gobolinux
 export HOST=oakdale
 export INFOPATH=/home/gobolinux/Rootless/System/Links/Manuals/info:
-export LANG=en_US
-export LANGUAGE=en_US:en_GB:en
+export LANG=C
+export LANGUAGE=C
+#en_US:en_GB:en
 export LD_LIBRARY_PATH=/home/gobolinux/Rootless/System/Links/Libraries:
 export LOGNAME=gobolinux
 export PATH=/home/gobolinux/Rootless/System/Links/Executables:/home/gobolinux/Rootless/System/Links/Executables:/usr/local/bin:/bin:/usr/bin:/usr/X11R6/bin:.:.
@@ -52,16 +53,21 @@ mkdir -p $compileLocalStore
 
 packdir=`Temporary_Dir`
 
-svn list "$compileLocalRepoRevisions" | remove_slash | while read program
+svn list "$compileLocalRepoRevisions" | grep -i "$(Arg 1)" | remove_slash | while read program
 do
    unset prevversion
    unset prevrecipe   
-   for version in `svn list "$compileLocalRepoRevisions/$program" | remove_slash | LC_ALL=C sort -r`
+   unset prevjustversion
+   versions=(`svn list "$compileLocalRepoRevisions/$program" | remove_slash`)
+   [ "$versions" ] || continue
+   #for version in `svn list "$compileLocalRepoRevisions/$program" | remove_slash | LC_ALL=C sort -r`
+   for version in $(GuessLatest -l "${versions[@]}")
    do
       revision=${version#*-r}
       justversion=${version%-r*}
       recipe="$compileLocalStore/$program--$version--recipe.tar.bz2"
-      if [ "$justversion" = "$prevversion" ]
+      #if [ "$version" != "$(GuessLatest "$version" "$prevversion")" -a "$prevjustversion" == "$justversion" ]
+      if [ "$prevjustversion" == "$justversion" -a "$version" != "$prevversion" ]
       then 
          rm -f "$recipe"
       elif [ ! -e "$recipe" ]
@@ -73,17 +79,19 @@ do
          Log_Normal "Packed $recipe"
          Quiet popd
       fi
-      prevversion="$justversion"
+      prevversion="$version"
+      prevjustversion="$justversion"
    done
 done
 
 rm -rf "$packdir"
 
 cd $compileLocalStore
-rm MANIFEST MANIFEST.bz2 RecipeList
+rm MANIFEST MANIFEST.bz2 RecipeList RecipeList.bz2
 ls | grep ".*--recipe.*" > MANIFEST
 cp MANIFEST RecipeList
 bzip2 --keep MANIFEST
+bzip2 --keep RecipeList
 
 echo `date` Finished >> ~/cronlog.txt
 wget -O /dev/null -o /dev/null http://www.gobolinux.org/tools/genlatestrecipes.php
