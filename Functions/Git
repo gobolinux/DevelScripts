@@ -1,0 +1,36 @@
+#!/bin/sh (syntax highlighting marker)
+
+function Get_Local_Trunk() {
+   [ -d "$compileGitLocalTrunk/../.git" ] || return 1
+   echo "$compileGitLocalTrunk"
+}
+
+function Get_Local_Revisions() {
+   [ -d "$compileGitLocalRevisions/../.git" ] || return 1
+   echo "$compileGitLocalRevisions"
+}
+
+function Check_Git_Tree() {
+   unset cloned
+   if ! trunk=`Get_Local_Trunk`
+   then 
+      if Boolean batch || Ask "You don't seem to have a copy of the git tree. Fetch it?"
+      then
+         Log_Normal "Calling 'git clone'."
+         mkdir -p ${compileGitLocalDir}
+         Quiet pushd ${compileGitLocalDir}
+         git clone --depth=1 $compileGitServerRepository || Die "Error doing git clone."
+         Quiet popd
+         Log_Normal "Clone finished."
+         cloned=yes
+      fi
+      if ! trunk=`Get_Local_Trunk` || [ ! "$cloned" ]
+      then Die "Could not find a valid git tree."
+      fi
+   else
+      Log_Normal "Updating local Git tree..."
+      Quiet pushd "${compileGitLocalTrunk}"/..
+      git pull
+      Quiet popd
+   fi
+}

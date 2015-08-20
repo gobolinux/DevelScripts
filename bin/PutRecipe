@@ -8,12 +8,12 @@ Import OptionParser
 Import Archive
 
 Parse_Conf Compile/Compile.conf
-Parse_Conf CompileSubversion.conf
-[ -z "${compileSubversionLocalDir}" ] && Die "You must run 'UpdateSettings develscripts' before trying to run PutRecipe again."
+Parse_Conf --mandatory CompileGit.conf
+[ "$compileGitServerRepository" ] || Die "Please check your CompileGit.conf configuration."
 
 ### Options ###################################################################
 
-scriptDescription="Put a recipe in the svn trunk/revision tree and upload it to the store."
+scriptDescription="Put a recipe in the git tree and upload it to the store."
 scriptCredits="Copyright (C) 2007 Lucas C. Villa Real. Released under the GNU GPL."
 helpOnNoArguments=yes
 scriptUsage="[ -m 'message' ] { <recipe dir> | <recipe name> [<recipe version>] }"
@@ -24,15 +24,6 @@ Add_Option_Boolean "" "batch" "Operate without prompting."
 Parse_Options "$@"
 
 ### Operation #################################################################
-
-[ "$compileLocalRecipesDir" ] || compileLocalRecipesDir="$goboData/Compile/LocalRecipes"
-mkdir -p "$compileLocalRecipesDir"
-[ "$compilePackedRecipesDir" ] || compilePackedRecipesDir="$goboData/Compile/PackedRecipes"
-mkdir -p "$compilePackedRecipesDir"
-[ "$compileSubversionLocalTrunk" ] || compileSubversionLocalTrunk="$goboData/Compile/Subversion/trunk"
-mkdir -p "$compileSubversionLocalTrunk"
-[ "$compileSubversionLocalRevisions" ] || compileSubversionLocalRevisions="$goboData/Compile/Subversion/revisions"
-mkdir -p "$compileSubversionLocalRevisions"
 
 if [ -z "$SVN_EDITOR" -a -z "$VISUAL" -a -z "$EDITOR" ]
 then
@@ -83,6 +74,10 @@ fi
 [ -r "$entry/$version/Recipe" ] || Die "Could not read Recipe file in $entry/$version."
 
 # Perform some simple cleanups
+postinstall="$entry/$version/Resources/PostInstall"
+if [ -e "$postinstall" ]
+then chmod +x "$postinstall"
+fi
 for i in `find $entry/$version -name Recipe`
 do
   [ -w `dirname "$i"` ] || Die "Need write permissions to the recipe."
@@ -114,25 +109,19 @@ tarball=${compilePackedRecipesDir}/${program}--${version}--recipe.tar.bz2
 
 version=`basename $tarball | sed 's,\(.*\)--\(.*\)--.*,\2,g'`
 # Merge the recipe into the local trunk
-ImportRecipe $(Boolean batch && echo "--batch") $tarball || exit 1
-
-contextlines=$(svn diff --non-interactive $compileSubversionLocalTrunk/$program/$version | wc -l)
+ImportRecipe $(Boolean batch && echo "--batch") $tarball || Die "Not publishing a revision."
 
 programlist="$program $programlist"
-if [ $contextlines -ne 0 ]
-then
-   # Commit the trunk and/or the revision tree.
-   if Is_Entry "message"
-   then PublishRevision $(Boolean batch && echo "--batch") --message "$(Entry "message")" --skip-lint $program $version || exit 1
-   else PublishRevision $(Boolean batch && echo "--batch") --skip-lint $program $version || exit 1
-   fi
-   postinstall=$program/$version/Resources/PostInstall
-   for localdir in $compileSubversionLocalTrunk $compileSubversionLocalRevisions
-   do
-       if [ -e $localdir/$postinstall ]
-       then svn propset svn:executable true $localdir/$postinstall
-       fi
-   done
-else
-   Log_Normal "No differences. Will not publish a revision."
+
+# Commit the trunk and/or the revision tree.
+if Is_Entry "message"
+then PublishRevision $(Boolean batch && echo "--batch") --message "$(Entry "message")" --skip-lint $program $version || exit 1
+else PublishRevision $(Boolean batch && echo "--batch") --skip-lint $program $version || exit 1
+fi
+Log_Normal "Pushing revision..."
+
+cd "$compileGitLocalTrunk"
+if git push
+then Log_Normal "Submitted $program $version."
+else Die "Failed submitting $program $version."
 fi

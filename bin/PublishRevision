@@ -5,7 +5,7 @@
 source ScriptFunctions
 Import GoboLinux
 Import File
-Import Subversion
+Import Git
 Import OptionParser
 
 ### Options ###################################################################
@@ -29,8 +29,8 @@ Parse_Options "$@"
 # ${goboUserSettings}/Scripts/INSERT_NAME_HERE.conf 
 
 Parse_Conf Compile/Compile.conf
-Parse_Conf CompileSubversion.conf
-[ -z "${compileSubversionLocalDir}" ] && Die "You must run 'UpdateSettings develscripts' before trying to run PublishRevision again."
+Parse_Conf --mandatory CompileGit.conf
+[ "$compileGitServerRepository" ] || Die "Please check your CompileGit.conf configuration."
 
 unset batch
 Boolean "batch" && batch=yes
@@ -40,13 +40,43 @@ username=`Entry username`
 
 ### Operation #################################################################
 
+# 0 - publish directly
+# 1 - ask for confirmation
+# 2 - abort
+function lint_recipe() {
+   program="$1"
+   version="$2"
+   
+   recipetarball="$goboTemp/$program--$version--recipe.tar.bz2"
+   (
+      cd "$trunk"
+      Verbose tar cjvpf "$recipetarball" "$program/$version"
+   )
+   RecipeLint "$recipetarball"
+   status=$?
+   rm "$recipetarball"
+   if [ "$status" -eq 1 ]
+   then
+      Log_Error "RecipeLint reported warnings in $program $version from trunk."
+      if ! Ask "Proceed and publish it anyway?"
+      then return 2
+      fi
+      return 0
+   elif [ "$status" -eq 2 ]
+   then
+      Log_Error "RecipeLint reported errors in $program $version from trunk. Not publishing it."
+      return 2
+   fi
+   return 1
+}
+
 function publish_revision() {
    program="$1"
    version="$2"
    
    if ! [ -d "$revisions/$program" ]
    then
-      svn mkdir "$revisions/$program"
+      mkdir "$revisions/$program"
    fi
    prefix="$version-r"
    if ls -d "$revisions/$program/$prefix"* &> /dev/null
@@ -90,34 +120,19 @@ function publish_revision() {
    Log_Normal "Publishing revision: $program $version-r$revision"
 
    unset publishrecipe
-   recipetarball="$goboTemp/$program--$version--recipe.tar.bz2"
-   (
-      cd "$trunk"
-      Verbose tar cjvpf "$recipetarball" --exclude=.svn "$program/$version"
-   )
 
-   if ! Boolean "skip-lint"
+   if Boolean "skip-lint"
    then
-      RecipeLint "$recipetarball"
-      recipestatus=$?
-      rm "$recipetarball"
-      if [ "$recipestatus" -eq 1 ]
-      then
-         Log_Error "RecipeLint reported warnings in $program $version from trunk."
-         if ! Ask "Proceed and publish it anyway?"
-         then return
-         fi
-         publishrecipe=yes
-      elif [ "$recipestatus" -eq 2 ]
-      then
-         Log_Error "RecipeLint reported errors in $program $version from trunk. Not publishing it."
-         return
-      fi
+      lint_recipe "$program" "$version"
+      case $? in
+      0) publishrecipe=yes ;;
+      1) : ;;
+      2) return ;;
+      esac # esac is ridiculous.
    fi
 
-   svn cleanup "$appdir"
-   Quiet svn update "$appdir"
-   svn copy "$appdir" "$revisions/$program/$version-r$revision"
+   mkdir -p "$revisions/$program"
+   cp -a "$appdir" "$revisions/$program/$version-r$revision"
    
    if [ `ls "$revisions/$program" | wc -l` -eq 1 ]
    then revdir="$revisions/$program"
@@ -125,16 +140,18 @@ function publish_revision() {
    fi
    
    Log_Normal "Listing $revdir"
-   find $revdir | grep -v '\.svn'
+   find $revdir
    if [ ! "$publishrecipe" ] && [ ! "$batch" ] && ! Ask "Ok to commit revision?"
    then 
-      # svn revert $revdir ?
       rm -rf $revdir
       return
    fi
    
    Log_Normal "Committing..."
-   svn commit $username --message "Committing revision $revision of $program $version" $revdir
+   Quiet pushd ${compileGitLocalRevisions}
+   git add $revdir
+   git commit -m "Revision $program $version-r$revision submitted by $compileRecipeAuthor" 
+   Quiet pushd ${compileGitLocalRevisions}
 }
 
 ### Operation #################################################################
@@ -142,54 +159,20 @@ function publish_revision() {
 program="$(basename $(Arg 1))"
 version="$(Arg 2)"
 
-trunk=`Get_Local_Trunk` || Die "Could not find a valid svn trunk."
+Check_Git_Tree || Die "Failed checking git tree."
+
+trunk=`Get_Local_Trunk` || Die "Could not find a valid git trunk."
 
 programintrunk=`ls "$trunk" | grep -i "^$program$"`
 [ "$programintrunk" ] || echo "Could not find $program in trunk."
 [ `echo "$programintrunk" | wc -l` -eq 1 ] || Die "More than one capitalization for $program found in trunk. Please check."
 program="$programintrunk"
 
-unset checkedout
-if ! revisions=`Get_Local_Revisions`
-then 
-   if Ask "You don't seem to have a copy of the svn revisions tree. Fetch it?"
-   then
-      Log_Normal "Calling 'svn checkout'."
-      mkdir -p ${compileSubversionLocalDir}
-      Quiet pushd ${compileSubversionLocalDir}
-      svn checkout --non-recursive $compileSubversionServerRepository/revisions || Die "Error doing the svn checkout."
-      Quiet popd
-      Log_Normal "Checkout finished."
-      checkedout=yes
-   fi
-   if ! revisions=`Get_Local_Revisions` || [ ! "$checkedout" ]
-   then Die "Could not find a valid svn revisions tree."
-   fi
-fi
+revisions=`Get_Local_Revisions`
 
-existingprogram=`ls "$revisions" 2> /dev/null | grep -i "^$program$"`
-if [ ! "$existingprogram" ]
-then
-   Log_Normal "Trying to checkout $program..."
-   Quiet pushd $revisions
-   svn checkout "$compileSubversionServerRepository/revisions/$program"
-   Quiet popd
-   checkedout=yes
-fi
-
-if [ ! "`ls "$trunk/$program"`" ]
-then
-   Log_Normal "No versions in trunk. Checking out..."
-   Quiet pushd $trunk
-   svn checkout "$compileSubversionServerRepository/trunk/$program"
-   Quiet popd
-fi
-
-if [ ! "$checkedout" = "yes" ]
-then
-   Log_Normal "Updating local subversion copy..."
-   svn update "$revisions/$program"
-fi
+Quiet pushd $revisions
+git pull
+Quiet popd
 
 if [ "$version" ]
 then
