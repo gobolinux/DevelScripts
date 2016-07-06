@@ -25,9 +25,9 @@ Parse_Options "$@"
 
 ### Operation #################################################################
 
-if [ -z "$SVN_EDITOR" -a -z "$VISUAL" -a -z "$EDITOR" ]
+if [ -z "$VISUAL" -a -z "$EDITOR" ]
 then
-   Die "Please set one of SVN_EDITOR, VISUAL or EDITOR environment variables before running this script"
+   Die "Please set one of VISUAL or EDITOR environment variables before running this script"
 fi
 
 entry="$(Arg 1)"
