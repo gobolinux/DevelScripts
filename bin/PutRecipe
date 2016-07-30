@@ -83,6 +83,7 @@ do
   [ -w `dirname "$i"` ] || Die "Need write permissions to the recipe."
   sed -i.bak -e 's,$target/../Settings,$settings_target,g' \
              -e 's,$target/../Variable,$variable_target,g' \
+             -e 's,compile_version=[0-9]*-GIT,compile_version=2.0,g' \
              $i
   rm $i.bak
 done
