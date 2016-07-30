@@ -133,7 +133,11 @@ then
    git add "$newrecipedir"
 
    if [ $latestexisting != $version ] && { Boolean batch || Ask "View differences in new version?" ; }
-   then diff -Naur "$oldrecipedir" "$unpackrecipedir" | mtail --config="$goboSettings/Scripts/diff.mtailrc" | less -R
+   then
+      if Boolean batch
+      then diff -Naur "$oldrecipedir" "$unpackrecipedir" | Color_Output diff
+      else diff -Naur "$oldrecipedir" "$unpackrecipedir" | Color_Output diff | less -R
+      fi
    fi
    Quiet popd
 else
