@@ -130,7 +130,7 @@ function publish_revision() {
 
    unset publishrecipe
 
-   if Boolean "skip-lint"
+   if ! Boolean "skip-lint"
    then
       lint_recipe "$program" "$version"
       case $? in
@@ -138,6 +138,8 @@ function publish_revision() {
       1) : ;;
       2) return ;;
       esac # esac is ridiculous.
+   else
+      publishrecipe=yes
    fi
 
    mkdir -p "$revisions/$program"
