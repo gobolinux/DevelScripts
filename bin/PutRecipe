@@ -25,9 +25,9 @@ Parse_Options "$@"
 
 ### Operation #################################################################
 
-if [ -z "$SVN_EDITOR" -a -z "$VISUAL" -a -z "$EDITOR" ]
+if [ -z "$VISUAL" -a -z "$EDITOR" ]
 then
-   Die "Please set one of SVN_EDITOR, VISUAL or EDITOR environment variables before running this script"
+   Die "Please set one of VISUAL or EDITOR environment variables before running this script"
 fi
 
 entry="$(Arg 1)"
@@ -83,6 +83,8 @@ do
   [ -w `dirname "$i"` ] || Die "Need write permissions to the recipe."
   sed -i.bak -e 's,$target/../Settings,$settings_target,g' \
              -e 's,$target/../Variable,$variable_target,g' \
+             -e 's,compile_version=[0-9]*-GIT,compile_version=2.0,g' \
+             -e 's,compile_version=[0-9]*-SVN,compile_version=2.0,g' \
              $i
   rm $i.bak
 done
