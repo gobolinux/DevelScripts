@@ -17,6 +17,7 @@ scriptUsage="<program> [<version>]"
 scriptExample="Glibc 2.5"
 scriptNotes="If no version is given, all versions in trunk are checked."
 Add_Option_Boolean "S" "skip-lint" "Don't run RecipeLint."
+Add_Option_Boolean "C" "skip-check-tree" "Don't check Git tree."
 Add_Option_Boolean "b" "batch" "Don't ask questions. Generate automatic commit logs such as 'NewVersion' and 'New recipe'."
 #Add_Option_Entry "r" "rename" "Rename program to <entry>."
 #Add_Option_List "l" "list" "Enter a colon-separated list of..." "foo:bar"
@@ -170,7 +171,10 @@ function publish_revision() {
 program="$(basename $(Arg 1))"
 version="$(Arg 2)"
 
-Check_Git_Tree || Die "Failed checking git tree."
+if ! Boolean "skip-check-tree"
+then
+   Check_Git_Tree || Die "Failed checking git tree."
+fi
 
 trunk=`Get_Local_Trunk` || Die "Could not find a valid git trunk."
 

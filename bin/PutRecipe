@@ -117,8 +117,8 @@ programlist="$program $programlist"
 
 # Commit the trunk and/or the revision tree.
 if Is_Entry "message"
-then PublishRevision $(Boolean batch && echo "--batch") --message "$(Entry "message")" --skip-lint $program $version || exit 1
-else PublishRevision $(Boolean batch && echo "--batch") --skip-lint $program $version || exit 1
+then PublishRevision $(Boolean batch && echo "--batch") -C --message "$(Entry "message")" --skip-lint $program $version || exit 1
+else PublishRevision $(Boolean batch && echo "--batch") -C --skip-lint $program $version || exit 1
 fi
 Log_Normal "Pushing revision..."
 
