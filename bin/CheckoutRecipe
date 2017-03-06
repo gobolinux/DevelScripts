@@ -10,7 +10,7 @@ Import OptionParser
 
 ### Options ###################################################################
 
-scriptDescription="Checkouts a recipe into the local svn tree."
+scriptDescription="Checkouts a recipe into the local git tree."
 scriptCredits="Copyright (C) 2007 Lucas C Villa Real, Hisham H. Muhammad. Released under the GNU GPL."
 helpOnNoArguments=yes
 scriptUsage="<program>"
