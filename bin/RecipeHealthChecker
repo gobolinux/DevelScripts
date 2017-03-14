@@ -67,7 +67,7 @@ class URI:
 			checksum.update(blob)
 		except urllib2.HTTPError as e:
 			#print("HTTP error submitting request: {}".format(e.code))
-			return False
+			return e.code
 		except urllib2.URLError as e:
 			#print("URL error submitting request: {}".format(e.reason))
 			return False
@@ -287,23 +287,23 @@ def health_check(recipedir, cp, logfile):
 	if len(r.urls):
 		urls, sizes, md5s = r.tarballInfo()
 		for url, size, md5 in zip(urls, sizes, md5s):
-			ok = URI(url).validate(size, md5)
-			write_health_log("{0} {1} {2} {3}\n".format(r.program, r.version, url, ok), logfile)
+			status = URI(url).validate(size, md5)
+			write_health_log("{0} {1} {2} {3}\n".format(r.program, r.version, url, status), logfile)
 	elif r.cvs:
-		ok = CVS(r.cvs, r.cvs_module).validate()
-		write_health_log("{0} {1} {2} {3}\n".format(r.program, r.version, r.cvs, ok), logfile)
+		status = CVS(r.cvs, r.cvs_module).validate()
+		write_health_log("{0} {1} {2} {3}\n".format(r.program, r.version, r.cvs, status), logfile)
 	elif r.svn:
-		ok = SVN(r.svn).validate()
-		write_health_log("{0} {1} {2} {3}\n".format(r.program, r.version, r.svn, ok), logfile)
+		status = SVN(r.svn).validate()
+		write_health_log("{0} {1} {2} {3}\n".format(r.program, r.version, r.svn, status), logfile)
 	elif r.git:
-		ok = GIT(r.git).validate()
-		write_health_log("{0} {1} {2} {3}\n".format(r.program, r.version, r.git, ok), logfile)
+		status = GIT(r.git).validate()
+		write_health_log("{0} {1} {2} {3}\n".format(r.program, r.version, r.git, status), logfile)
 	elif r.bzr:
-		ok = BZR(r.bzr).validate()
-		write_health_log("{0} {1} {2} {3}\n".format(r.program, r.version, r.bzr, ok), logfile)
+		status = BZR(r.bzr).validate()
+		write_health_log("{0} {1} {2} {3}\n".format(r.program, r.version, r.bzr, status), logfile)
 	elif r.hg:
-		ok = HG(r.hg).validate()
-		write_health_log("{0} {1} {2} {3}\n".format(r.program, r.version, r.hg, ok), logfile)
+		status = HG(r.hg).validate()
+		write_health_log("{0} {1} {2} {3}\n".format(r.program, r.version, r.hg, status), logfile)
 
 
 def write_health_log(data, logfile):
