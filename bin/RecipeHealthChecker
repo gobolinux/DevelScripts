@@ -9,8 +9,9 @@ from multiprocessing import Pool, cpu_count
 from itertools import repeat
 import subprocess
 import configparser
-import glob
 import hashlib
+import glob
+import sys
 
 import os
 import socket
@@ -150,13 +151,25 @@ class HG(VersionControl):
 
 
 class RecipeList:
+	def __init__(self):
+		self.ignore = []
+
 	def update(self):
 		''' Populate or update /Data/Compile/Git/Recipes '''
 		subprocess.call(["CheckoutRecipe","--batch","GCC"])
 
-	def get(self, which="trunk"):
+	def exclude(self, pdict):
+		for key in pdict.keys():
+			for val in pdict[key]:
+				self.ignore.append("/Data/Compile/Git/Recipes/trunk/{0}/{1}".format(key, val))
+
+	def __valid(self, path):
+		return True if path not in self.ignore else False
+
+	def get(self):
 		''' Get a list of all recipe directories '''
-		return glob.glob("/Data/Compile/Git/Recipes/{}/*/*".format(which))
+		recipes = glob.glob("/Data/Compile/Git/Recipes/trunk/*/*")
+		return list(filter(self.__valid, recipes))
 
 
 class Recipe:
@@ -229,13 +242,13 @@ class Recipe:
 			self.sizes = [int(x) for x in self.__parseList(data, "file_sizes=")]
 
 	def __parseKey(self, data, key):
-		# Note the escaped \n due to the way we read the file
+		# We escape \n because the file is read in binary mode (rb)
 		start = data.find(key)
 		end = start + data[start:].find("\\n")
 		return data[start:end].split("=")[1].strip('"').strip("'")
 
 	def __parseList(self, data, key):
-		# Note the escaped \n due to the way we read the file
+		# We escape \n because the file is read in binary mode (rb)
 		start = data.find(key)
 		end = start + data[start:].find(")")
 		substr = data[start:end].replace(key, "").replace("(", "")
@@ -267,7 +280,7 @@ def readline_generator(fp):
 		line = fp.readline()
 
 
-def health_check(recipedir, cp):
+def health_check(recipedir, cp, logfile):
 	''' Checks the health of a recipe '''
 	r = Recipe(recipedir, cp)
 	r.parse()
@@ -275,22 +288,39 @@ def health_check(recipedir, cp):
 		urls, sizes, md5s = r.tarballInfo()
 		for url, size, md5 in zip(urls, sizes, md5s):
 			ok = URI(url).validate(size, md5)
-			print("{0} {1}, {2}: {3}".format(r.program, r.version, url, ok))
+			write_health_log("{0} {1} {2} {3}\n".format(r.program, r.version, url, ok), logfile)
 	elif r.cvs:
 		ok = CVS(r.cvs, r.cvs_module).validate()
-		print("{0} {1}: {2}: {3}".format(r.program, r.version, r.cvs, ok))
+		write_health_log("{0} {1} {2} {3}\n".format(r.program, r.version, r.cvs, ok), logfile)
 	elif r.svn:
 		ok = SVN(r.svn).validate()
-		print("{0} {1}: {2}: {3}".format(r.program, r.version, r.svn, ok))
+		write_health_log("{0} {1} {2} {3}\n".format(r.program, r.version, r.svn, ok), logfile)
 	elif r.git:
 		ok = GIT(r.git).validate()
-		print("{0} {1}: {2}: {3}".format(r.program, r.version, r.git, ok))
+		write_health_log("{0} {1} {2} {3}\n".format(r.program, r.version, r.git, ok), logfile)
 	elif r.bzr:
 		ok = BZR(r.bzr).validate()
-		print("{0} {1}: {2}: {3}".format(r.program, r.version, r.bzr, ok))
+		write_health_log("{0} {1} {2} {3}\n".format(r.program, r.version, r.bzr, ok), logfile)
 	elif r.hg:
 		ok = HG(r.hg).validate()
-		print("{0} {1}: {2}: {3}".format(r.program, r.version, r.hg, ok))
+		write_health_log("{0} {1} {2} {3}\n".format(r.program, r.version, r.hg, ok), logfile)
+
+
+def write_health_log(data, logfile):
+	sys.stdout.write(data)
+	with open(logfile, "a") as f:
+		f.write(data)
+
+
+def read_health_log(fname):
+	try:
+		pairs = [(x.split()[0], x.split()[1]) for x in open(fname).readlines()]
+		pdict = dict([(x[0],[]) for x in pairs])
+		for key, val in pairs:
+			pdict[key].append(val)
+		return pdict
+	except:
+		return dict()
 
 
 def main():
@@ -308,11 +338,13 @@ def main():
 	cp = configparser.ConfigParser()
 	cp.read_file(readline_generator(open("/System/Settings/Compile/Compile.conf")))
 
+	logfile = "health.log"
 	recipelist = RecipeList()
 	recipelist.update()
+	recipelist.exclude(read_health_log(logfile))
 
 	with Pool(cpu_count()) as pool:
-		pool.starmap(health_check, zip(recipelist.get(), repeat(cp)))
+		pool.starmap(health_check, zip(recipelist.get(), repeat(cp), repeat(logfile)))
 
 
 if __name__ == "__main__":
