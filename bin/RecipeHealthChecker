@@ -327,7 +327,7 @@ def main():
 	recipelist.update()
 	recipelist.exclude(read_health_log(logfile))
 
-	with Pool(cpu_count()) as pool:
+	with Pool(cpu_count() * 4) as pool:
 		pool.starmap(health_check, zip(recipelist.get(), repeat(cp), repeat(logfile)))
 
 
