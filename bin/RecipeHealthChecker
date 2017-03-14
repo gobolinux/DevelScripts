@@ -115,7 +115,7 @@ class VersionControl:
 
 class CVS(VersionControl):
 	def __init__(self, repos, module):
-		VersionControl.__init__(repos)
+		VersionControl.__init__(self, repos)
 		self.module = module if module is not None else os.path.basename(self.repos)
 
 	def validate(self):
