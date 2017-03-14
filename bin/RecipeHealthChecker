@@ -211,8 +211,11 @@ class Recipe:
 			raise
 
 		data = data.replace("$ftpGnu", self.cp.get("main", "ftpGnu"))
+		data = data.replace("${ftpGnu}", self.cp.get("main", "ftpGnu"))
 		data = data.replace("$ftpAlphaGnu", self.cp.get("main", "ftpAlphaGnu"))
+		data = data.replace("${ftpAlphaGnu}", self.cp.get("main", "ftpAlphaGnu"))
 		data = data.replace("$httpSourceforge", self.cp.get("main", "httpSourceforge"))
+		data = data.replace("${httpSourceforge}", self.cp.get("main", "httpSourceforge"))
 
 		if data.find("url=") >= 0:
 			self.urls = [self.__parseKey(data, "url=")]
