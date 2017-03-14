@@ -181,16 +181,15 @@ class Recipe:
 		''' Parses all recipe files of a given directory '''
 		recipes = ["{}/Recipe".format(self.recipedir)] + glob.glob("{}/*/Recipe".format(self.recipedir))
 		for recipe in recipes:
-			self.__parse(recipe)
+			try:
+				self.__parse(recipe)
+			except:
+				print("Error parsing {0}".format(recipe))
+				raise
 
 	def __parse(self, recipe):
 		''' A naive Recipe parser '''
-		try:
-			data = str(open(recipe, "rb").read())
-		except UnicodeDecodeError as e:
-			print("Error parsing {0}".format(recipe))
-			raise
-
+		data = str(open(recipe, "rb").read())
 		data = data.replace("$ftpGnu", self.cp.get("main", "ftpGnu"))
 		data = data.replace("${ftpGnu}", self.cp.get("main", "ftpGnu"))
 		data = data.replace("$ftpAlphaGnu", self.cp.get("main", "ftpAlphaGnu"))
@@ -221,15 +220,21 @@ class Recipe:
 			self.md5s = self.__parseList(data, "file_md5s=")
 
 		if data.find("file_size=") >= 0:
-			self.sizes = [int(x) for x in [self.__parseKey(data, "file_size=")]]
+			self.sizes = [int(x) for x in [self.__parseKey(data, "file_size=", -1)]]
 		elif data.find("file_sizes=") >= 0:
 			self.sizes = [int(x) for x in self.__parseList(data, "file_sizes=")]
 
-	def __parseKey(self, data, key):
+
+	def __parseKey(self, data, key, default=""):
 		# We escape \n because the file is read in binary mode (rb)
 		start = data.find(key)
-		end = start + data[start:].find("\\n")
-		return data[start:end].split("=")[1].strip('"').strip("'")
+		end = data[start:].find("\\n")
+		if end < 0:
+			end = len(data[start:])
+		value = data[start:start+end].split("=")[1].strip('"').strip("'")
+		if len(value) == 0:
+			value = default
+		return value
 
 	def __parseList(self, data, key):
 		# We escape \n because the file is read in binary mode (rb)
