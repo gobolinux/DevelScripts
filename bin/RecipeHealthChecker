@@ -22,29 +22,6 @@ import contextlib
 # Set default timeout
 socket.setdefaulttimeout(60)
 
-# Patch httplib to recover from errors like:
-#
-#  File "/usr/lib64/python2.7/socket.py", line 380, in read
-#    data = self._sock.recv(left)
-#  File "/usr/lib64/python2.7/httplib.py", line 541, in read
-#    return self._read_chunked(amt)
-#  File "/usr/lib64/python2.7/httplib.py", line 592, in _read_chunked
-#    value.append(self._safe_read(amt))
-#  File "/usr/lib64/python2.7/httplib.py", line 649, in _safe_read
-#    raise IncompleteRead(''.join(s), amt)
-#  httplib.IncompleteRead: IncompleteRead(2519 bytes read, 1961 more expected)
-
-def http_response_read(func):
-	def inner(*args):
-		try:
-			return func(*args)
-		except httplib.IncompleteRead as e:
-			return e.partial
-	return inner
-
-httplib.HTTPResponse.read = http_response_read(httplib.HTTPResponse.read)
-
-
 class URI:
 	''' Interface for downloading files via HTTP or FTP protocols '''
 	def __init__(self, uri=''):
@@ -64,6 +41,10 @@ class URI:
 						break
 					blob += data
 					numread += len(data)
+			checksum.update(blob)
+		except httplib.IncompleteRead as e:
+			blob += e.partial
+			numread += len(e.partial)
 			checksum.update(blob)
 		except urllib2.HTTPError as e:
 			#print("HTTP error submitting request: {}".format(e.code))
