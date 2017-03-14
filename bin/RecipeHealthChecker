@@ -73,6 +73,9 @@ class URI:
 		except socket.error as e:
 			#print("URL error submitting request: {}".format(e))
 			return False
+		except ValueError as e:
+			#print("URL error submitting request: {}".format(e))
+			return False
 
 		if filesize >= 0:
 			return filesize == numread
