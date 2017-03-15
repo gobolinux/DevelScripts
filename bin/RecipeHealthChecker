@@ -166,6 +166,7 @@ class Recipe:
 		self.bzr = None
 		self.hg = None
 		self.urls = []
+		self.mirror_urls = []
 		self.md5s = []
 		self.sizes = []
 
@@ -201,6 +202,10 @@ class Recipe:
 			self.urls = [self.__parseKey(data, "url=")]
 		elif data.find("urls=") >= 0:
 			self.urls = self.__parseList(data, "urls=")
+		elif data.find("mirror_url=") >= 0:
+			self.mirror_urls = [self.__parseKey(data, "mirror_url=")]
+		elif data.find("mirror_urls=") >= 0:
+			self.urls = self.__parseList(data, "mirror_urls=")
 		elif data.find("cvs=") >= 0:
 			self.cvs = self.__parseKey(data, "cvs=")
 		elif data.find("cvs_module=") >= 0:
@@ -277,6 +282,9 @@ def health_check(recipedir, cp, logfile):
 		urls, sizes, md5s = r.tarballInfo()
 		for url, size, md5 in zip(urls, sizes, md5s):
 			status = URI(url).validate(size, md5)
+			if status != True and len(r.mirror_urls):
+				url = r.mirror_url[urls.index(url)]
+				status = URI(url).validate(size, md5)
 			write_health_log("{0} {1} {2} {3}\n".format(r.program, r.version, url, status), logfile)
 	elif r.cvs:
 		status = CVS(r.cvs, r.cvs_module).validate()
