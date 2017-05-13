@@ -165,6 +165,15 @@ class Recipe:
 			subprocess.call(["rm","-rf","/Data/Compile/LocalRecipes/{0}/{1}".format(self.program,self.version)])
 			subprocess.call(["rmdir","/Data/Compile/LocalRecipes/{0}".format(self.program)])
 
+	def makeMirror(self, mirror_url):
+		destdir = "mirror_url/{0}/{1}".format(self.program, self.version)
+		destfile = "{}/fetch_me".format(destdir)
+		if not os.path.exists(destdir):
+			os.makedirs(destdir)
+		with open(destfile, "w") as f:
+			f.write("wget {}\n".format(mirror_url))
+		os.chmod(destfile, 0o755)
+
 	def tarballInfo(self):
 		urls, sizes, md5s = self.urls, self.sizes, self.md5s
 		if len(sizes) < len(urls):
@@ -445,9 +454,11 @@ class HealCommand:
 			for cache in caches:
 				alt_url = cache.find(recipe)
 				if alt_url:
-					print("{} has a mirror, fixing it!".format(recipe.urls[0]))
-					recipe.replace(recipe.urls[0], alt_url)
-					recipe.publish()
+					#print("{} has a mirror, fixing it!".format(recipe.urls[0]))
+					#recipe.replace(recipe.urls[0], alt_url)
+					#recipe.publish()
+					print("{} has a mirror!".format(recipe.urls[0]))
+					recipe.makeMirror(alt_url)
 					break
 
 
