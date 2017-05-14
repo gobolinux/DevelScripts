@@ -587,11 +587,14 @@ class GoboLinuxOrgCache(Cache):
 	def __init__(self):
 		Cache.__init__(self)
 		self.cachefile = "gobolinux.org-sources.txt"
-		self.cachedfiles = [x.strip("\n") for x in open(self.cachefile).readlines()]
 
 	def find(self, recipe):
+		if not os.path.exists(self.cachefile):
+			cmd = "ssh gobolinux@gobolinux.org ls /home/gobolinux/old.gobolinux.org/sources > {}".format(self.cachefile)
+			subprocess.call(cmd)
+		cachedfiles = [x.strip("\n") for x in open(self.cachefile).readlines()]
 		tarball = recipe.tarballs[0]
-		if tarball in self.cachedfiles:
+		if tarball in cachedfiles:
 			return "/home/gobolinux/old.gobolinux.org/sources/{}".format(tarball)
 		return None
 
