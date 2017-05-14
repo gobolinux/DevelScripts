@@ -43,15 +43,49 @@ Parse_Conf CompileSubversion.conf
 
 echo `date` Started >> ~/cronlog.txt
 
-remove_slash() {
-   sed 's,/$,,'
-}
-
 revisionsDir="$HOME/git/Recipes/revisions"
 mkdir -p "$compileLocalStore"
 
 packdir=`Temporary_Dir`
 pull_log="$packdir/gitpull.log"
+
+download_mirror_url() {
+   local program="$1"
+   local verrev="$2"
+   local version="${verrev%-r*}"
+   local mirrorUrlDir="$HOME/gobolinux.org/mirror_url"
+   
+   local recipeFile="$revisionsDir/$program/$verrev/Recipe"
+   if [ ! -e "$recipeFile" ]
+   then
+      return
+   fi
+   
+   local url=$(sed -n 's,url=['\''"]\(.*\)['\''"]$,\1,p;s,url=\(.*\),\1,p' "$recipeFile")
+   if [ ! "$url" ]
+   then
+      echo "Variable url not found in recipe for $program $verrev" >> ~/cronlog.txt
+      return
+   fi
+   
+   local tarball=$(basename "$url")
+   local tarballPathname="$mirrorUrlDir/$program/$version/$tarball"
+   if [ -e "$tarballPathname" ]
+   then
+      echo "Already downloaded $tarball for $program $version" >> ~/cronlog.txt
+      return
+   fi
+   
+   if [[ ! "$tarball" =~ (tar.gz|tgz|tar.bz2|tbz|tbz2|zip|tar.xz|tar.lzma|tar.lz)$ ]]
+   then
+      echo "Unknown archive extension in $tarball for $program $version" >> ~/cronlog.txt
+      return
+   fi
+
+   mkdir -p $(dirname "$tarballPathname")   
+   echo "Fetching $tarball for $program $version" >> ~/cronlog.txt
+   wget --output-document="$tarballPathname" -o /dev/null "$url" &
+}
 
 cd "$revisionsDir"
 git pull &> "$pull_log"
@@ -85,6 +119,7 @@ do
          cp -a "$revisionsDir/$program/$version" "$program/$version"
          tar cjpf "$recipe" "$program/$version"
          Log_Normal "Packed $recipe"
+         download_mirror_url "$program" "$version"
          Quiet popd
       fi
       prevversion="$version"
