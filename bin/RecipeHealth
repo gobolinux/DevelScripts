@@ -1,0 +1,601 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# Checks the health of recipes by validating their url(s).
+# Written by Lucas C. Villa Real
+# Released under the GPL version 2
+
+from multiprocessing import Pool, cpu_count
+from configparser import ConfigParser
+from itertools import repeat
+import subprocess
+import hashlib
+import glob
+import sys
+
+import os
+import socket
+import http.client as httplib
+import urllib.request as urllib2
+import contextlib
+from html.parser import HTMLParser
+
+
+def which(app):
+	''' Tests if an executable is on the $PATH. Returns its path on success or None on error. '''
+	fpath, fname = os.path.split(app)
+	if fpath and os.path.isfile(app) and os.access(app, os.X_OK):
+		return app
+	elif not fpath:
+		for entry in os.environ['PATH'].split(os.pathsep):
+			entry = entry.strip('"')
+			execFile = os.path.join(entry, app)
+			if os.path.isfile(execFile) and os.access(execFile, os.X_OK):
+				return execFile
+	return None
+
+
+# Set default socket timeout
+socket.setdefaulttimeout(60)
+
+class URI:
+	''' Interface for downloading files via HTTP or FTP protocols '''
+	def __init__(self, uri=''):
+		self.uri = uri
+		self.opener = urllib2.build_opener()
+
+	def exists(self):
+		try:
+			with contextlib.closing(self.opener.open(self.uri)) as u:
+				pass
+		except urllib2.HTTPError as e:
+			#print("HTTP error submitting request: {}".format(e.code))
+			return False
+		except urllib2.URLError as e:
+			#print("URL error submitting request: {}".format(e.reason))
+			return False
+		except socket.error as e:
+			#print("URL error submitting request: {}".format(e))
+			return False
+		except ValueError as e:
+			#print("URL error submitting request: {}".format(e))
+			return False
+		return True
+
+	def download(self):
+		numread, blob = 0, bytes()
+		try:
+			with contextlib.closing(self.opener.open(self.uri)) as u:
+				while True:
+					data = u.read(8192)
+					if len(data) == 0:
+						break
+					blob += data
+					numread += len(data)
+		except httplib.IncompleteRead as e:
+			blob += e.partial
+			numread += len(e.partial)
+		except urllib2.HTTPError as e:
+			return None
+		except urllib2.URLError as e:
+			return None
+		except socket.error as e:
+			return None
+		except ValueError as e:
+			return None
+		return blob
+
+	def validate(self, filesize=-1, filemd5=""):
+		numread, blob, checksum = 0, bytes(), hashlib.md5()
+		try:
+			with contextlib.closing(self.opener.open(self.uri)) as u:
+				if filesize >= 0 and u.info().get('Content-Length'):
+					contentlength = int(u.info().get('Content-Length'))
+					return filesize == contentlength
+				while True:
+					data = u.read(8192)
+					if len(data) == 0:
+						break
+					blob += data
+					numread += len(data)
+			checksum.update(blob)
+		except httplib.IncompleteRead as e:
+			blob += e.partial
+			numread += len(e.partial)
+			checksum.update(blob)
+		except urllib2.HTTPError as e:
+			#print("HTTP error submitting request: {}".format(e.code))
+			return e.code
+		except urllib2.URLError as e:
+			#print("URL error submitting request: {}".format(e.reason))
+			return False
+		except socket.error as e:
+			#print("URL error submitting request: {}".format(e))
+			return False
+		except ValueError as e:
+			#print("URL error submitting request: {}".format(e))
+			return False
+
+		if filesize >= 0:
+			return filesize == numread
+		elif len(filemd5) and numread > 0:
+			return filemd5 == checksum.hexdigest()
+		elif numread > 0:
+			return Magic(blob).isArchive()
+		return False
+
+
+class Magic:
+	''' Attempts to validate an archive by looking at its first few bytes '''
+	def __init__(self, blob):
+		self.blob = blob
+
+	def isArchive(self):
+		p = subprocess.Popen(["file", "--brief", "-"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+		stdout, stderr = p.communicate(self.blob)
+		return True if not b"HTML document" in stdout else False
+
+
+class Recipe:
+	''' Recipe information and parsing '''
+	def __init__(self):
+		self.program = None
+		self.version = None
+		self.cvs = None
+		self.cvs_module = None
+		self.svn = None
+		self.git = None
+		self.bzr = None
+		self.hg = None
+		self.urls = []
+		self.mirror_urls = []
+		self.md5s = []
+		self.sizes = []
+		self.health = []
+
+	def replace(self, old_str, new_str):
+		p = subprocess.Popen(["EditRecipe", "-E", self.program, self.version], stdout=subprocess.PIPE)
+		p.wait()
+		recipefile = "{0}/Recipe".format(str(p.stdout).strip("\n"))
+		subprocess.call(["GrepReplace", "-B", old_str, new_str, recipefile])
+
+	def publish(self):
+		ret = subprocess.call(["PutRecipe", "--batch", self.program, self.version])
+		if ret == 0:
+			subprocess.call(["rm","-rf","/Data/Compile/LocalRecipes/{0}/{1}".format(self.program,self.version)])
+			subprocess.call(["rmdir","/Data/Compile/LocalRecipes/{0}".format(self.program)])
+
+	def makeMirror(self, mirror_url):
+		destdir = "mirror_url/{0}/{1}".format(self.program, self.version)
+		destfile = "{}/fetch_me".format(destdir)
+		if not os.path.exists(destdir):
+			os.makedirs(destdir)
+		with open(destfile, "w") as f:
+			f.write("wget {}\n".format(mirror_url))
+		os.chmod(destfile, 0o755)
+
+	def tarballInfo(self):
+		urls, sizes, md5s = self.urls, self.sizes, self.md5s
+		if len(sizes) < len(urls):
+			sizes = [-1] * len(urls)
+		if len(md5s) < len(urls):
+			md5s = [""] * len(urls)
+		return urls, sizes, md5s
+
+	def fromHealthLog(self, line):
+		tokens = line.strip("\n").split(",")
+		self.program = tokens[0]
+		self.version = tokens[1]
+		self.urls = [tokens[2]]
+		self.sizes = [tokens[3]]
+		self.md5s = [tokens[4]]
+		self.health = [tokens[5]]
+		self.tarballs = [os.path.basename(self.urls[0])]
+		return self
+
+	def fromDirectory(self, recipedir, configparser):
+		''' Parses all recipe files from a given directory '''
+		self.program = os.path.basename(os.path.dirname(recipedir))
+		self.version = os.path.basename(recipedir)
+
+		recipes = ["{}/Recipe".format(recipedir)] + glob.glob("{}/*/Recipe".format(recipedir))
+		for recipe in recipes:
+			try:
+				self.__parse(recipe, configparser)
+			except:
+				print("Error parsing {0}".format(recipe))
+				raise
+		return self
+
+	def __parse(self, recipe, configparser):
+		''' A naive Recipe parser '''
+		data = str(open(recipe, "rb").read())
+		data = data.replace("$ftpGnu", configparser.get("main", "ftpGnu"))
+		data = data.replace("${ftpGnu}", configparser.get("main", "ftpGnu"))
+		data = data.replace("$ftpAlphaGnu", configparser.get("main", "ftpAlphaGnu"))
+		data = data.replace("${ftpAlphaGnu}", configparser.get("main", "ftpAlphaGnu"))
+		data = data.replace("$httpSourceforge", configparser.get("main", "httpSourceforge"))
+		data = data.replace("${httpSourceforge}", configparser.get("main", "httpSourceforge"))
+
+		if data.find("url=") >= 0:
+			self.urls = [self.__parseKey(data, "url=")]
+		elif data.find("urls=") >= 0:
+			self.urls = self.__parseList(data, "urls=")
+		elif data.find("mirror_url=") >= 0:
+			self.mirror_urls = [self.__parseKey(data, "mirror_url=")]
+		elif data.find("mirror_urls=") >= 0:
+			self.urls = self.__parseList(data, "mirror_urls=")
+		elif data.find("cvs=") >= 0:
+			self.cvs = self.__parseKey(data, "cvs=")
+		elif data.find("cvs_module=") >= 0:
+			self.cvs_module = self.__parseKey(data, "cvs_module=")
+		elif data.find("svn=") >= 0:
+			self.svn = self.__parseKey(data, "svn=")
+		elif data.find("git=") >= 0:
+			self.git = self.__parseKey(data, "git=")
+		elif data.find("bzr=") >= 0:
+			self.bzr = self.__parseKey(data, "bzr=")
+		elif data.find("hg=") >= 0:
+			self.hg = self.__parseKey(data, "hg=")
+
+		if data.find("file_md5=") >= 0:
+			self.md5s = [self.__parseKey(data, "file_md5=")]
+		elif data.find("file_md5s=") >= 0:
+			self.md5s = self.__parseList(data, "file_md5s=")
+
+		if data.find("file_size=") >= 0:
+			self.sizes = [int(x) for x in [self.__parseKey(data, "file_size=", -1)]]
+		elif data.find("file_sizes=") >= 0:
+			self.sizes = [int(x) for x in self.__parseList(data, "file_sizes=")]
+
+
+	def __parseKey(self, data, key, default=""):
+		# We escape \n because the file is read in binary mode (rb)
+		start = data.find(key)
+		end = data[start:].find("\\n")
+		if end < 0:
+			end = len(data[start:])
+		value = data[start:start+end].split("=")[1].strip('"').strip("'")
+		if len(value) == 0:
+			value = default
+		return value
+
+	def __parseList(self, data, key):
+		# We escape \n because the file is read in binary mode (rb)
+		start = data.find(key)
+		end = start + data[start:].find(")")
+		substr = data[start:end].replace(key, "").replace("(", "")
+		return [x.strip().strip('"').strip("'") for x in substr.split("\\n") if len(x)]
+
+
+class RecipeList:
+	''' Operations on the recipe repository '''
+	def __init__(self):
+		self.ignore = []
+
+	def update(self):
+		''' Populate or update /Data/Compile/Git/Recipes '''
+		subprocess.call(["CheckoutRecipe","--batch","GCC"])
+
+	def exclude(self, pdict):
+		for key in pdict.keys():
+			for val in pdict[key]:
+				self.ignore.append("/Data/Compile/Git/Recipes/trunk/{0}/{1}".format(key, val))
+
+	def __valid(self, path):
+		return True if path not in self.ignore else False
+
+	def get(self):
+		''' Get a list of all recipe directories '''
+		recipes = glob.glob("/Data/Compile/Git/Recipes/trunk/*/*")
+		return list(filter(self.__valid, recipes))
+
+
+class RecipeHealth:
+	''' Recipe health checker '''
+	def __init__(self, logfile, configparser):
+		self.logfile = logfile
+		self.configparser = configparser
+
+	def check(self, recipedir):
+		''' Checks the health of a recipe. The result is written to @logfile '''
+		r = Recipe()
+		r.fromDirectory(recipedir, self.configparser)
+		if len(r.urls):
+			urls, sizes, md5s = r.tarballInfo()
+			for url, size, md5 in zip(urls, sizes, md5s):
+				status = URI(url).validate(size, md5)
+				if status != True and len(r.mirror_urls):
+					url = r.mirror_url[urls.index(url)]
+					status = URI(url).validate(size, md5)
+				self.write("{0},{1},{2},{3},{4},{5}\n".format(r.program, r.version, url, size, md5, status))
+		elif r.cvs:
+			status = CVS(r.cvs, r.cvs_module).validate()
+			self.write("{0},{1},{2},{3},{4},{5}\n".format(r.program, r.version, r.cvs, 0, "", status))
+		elif r.svn:
+			status = SVN(r.svn).validate()
+			self.write("{0},{1},{2},{3},{4},{5}\n".format(r.program, r.version, r.svn, 0, "", status))
+		elif r.git:
+			status = GIT(r.git).validate()
+			self.write("{0},{1},{2},{3},{4},{5}\n".format(r.program, r.version, r.git, 0, "", status))
+		elif r.bzr:
+			status = BZR(r.bzr).validate()
+			self.write("{0},{1},{2},{3},{4},{5}\n".format(r.program, r.version, r.bzr, 0, "", status))
+		elif r.hg:
+			status = HG(r.hg).validate()
+			self.write("{0},{1},{2},{3},{4},{5}\n".format(r.program, r.version, r.hg, 0, "", status))
+
+	def write(self, data):
+		sys.stdout.write(data)
+		with open(self.logfile, "a") as f:
+			f.write(data)
+
+	def read(self):
+		try:
+			pairs = [(x.split(",")[0], x.split(",")[1]) for x in open(self.logfile).readlines()]
+			pdict = dict([(x[0],[]) for x in pairs])
+			for key, val in pairs:
+				pdict[key].append(val)
+			return pdict
+		except:
+			return dict()
+
+
+#######################
+# Check command handler
+#######################
+
+class CheckCommand:
+	def __init__(self, logfile):
+		self.logfile = logfile
+
+	def run(self):
+		if not which("cvs"):
+			print("Warning: cvs executable not found, assuming all CVS recipes good")
+		if not which("svn"):
+			print("Warning: svn executable not found, assuming all SVN recipes good")
+		if not which("git"):
+			print("Warning: git executable not found, assuming all GIT recipes good")
+		if not which("bzr"):
+			print("Warning: bzr executable not found, assuming all BZR recipes good")
+		if not which("hg"):
+			print("Warning: hg executable not found, assuming all HG recipes good")
+
+		configparser = ConfigParser()
+		configparser.read_file(self.readlineGenerator(open("/System/Settings/Compile/Compile.conf")))
+
+		health = RecipeHealth(self.logfile, configparser)
+		recipelist = RecipeList()
+		recipelist.update()
+		recipelist.exclude(health.read())
+
+		with Pool(cpu_count() * 12) as pool:
+			pool.starmap(health.check, zip(recipelist.get()))
+
+	def readlineGenerator(self, fp):
+		''' Translates a GoboLinux config file into an INI file '''
+		line = fp.readline()
+		yield "[main]\n"
+		while line:
+			if line == "(\n" or line == ")\n":
+				yield "\n"
+			else:
+				yield line
+			line = fp.readline()
+
+
+class VersionControl:
+	''' Generic version control class. To be extended by specific VCS classes. '''
+	def __init__(self, repos):
+		self.repos = repos
+
+	def do_validate(self, cmd, environ=None):
+		if not which(cmd[0]):
+			return True
+		if environ is None:
+			environ = os.environ.copy()
+		p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environ)
+		for line in p.stdout:
+			pass
+		p.wait()
+		return p.returncode == 0
+
+
+class CVS(VersionControl):
+	def __init__(self, repos, module):
+		VersionControl.__init__(self, repos)
+		self.module = module if module is not None else os.path.basename(self.repos)
+
+	def validate(self):
+		cmd = ["cvs", "-Q", "--no-verify", "-z3", "-d{}".format(self.repos), "co", "-p", self.module]
+		return self.do_validate(cmd)
+
+
+class SVN(VersionControl):
+	def validate(self):
+		cmd = ["svn", "ls", self.repos]
+		return self.do_validate(cmd)
+
+
+class GIT(VersionControl):
+	def validate(self):
+		cmd = ["git", "ls-remote", self.repos]
+		environ = os.environ.copy()
+		environ["GIT_SSL_NO_VERIFY"] = "true"
+		return self.do_validate(cmd, environ)
+
+
+class BZR(VersionControl):
+	def validate(self):
+		cmd = ["bzr", "info", self.repos]
+		return self.do_validate(cmd)
+
+
+class HG(VersionControl):
+	def validate(self):
+		cmd = ["hg", "identify", self.repos]
+		return self.do_validate(cmd)
+
+
+######################
+# Heal command handler
+######################
+
+class HealCommand:
+	def __init__(self, logfile):
+		self.logfile = logfile
+
+	def run(self):
+		with open(self.logfile, "r") as f:
+			recipes = [Recipe().fromHealthLog(line) for line in f.readlines()]
+
+		caches = [DebianCache().mkcache(), FedoraCache().mkcache()]
+		for recipe in [x for x in recipes if x.health[0] != "True"]:
+			for cache in caches:
+				alt_url = cache.find(recipe)
+				if alt_url:
+					#print("{} has a mirror, fixing it!".format(recipe.urls[0]))
+					#recipe.replace(recipe.urls[0], alt_url)
+					#recipe.publish()
+					print("{} has a mirror!".format(recipe.urls[0]))
+					recipe.makeMirror(alt_url)
+					break
+
+
+class Cache(HTMLParser):
+	''' HTML parser. Populates a directory-based cache according to the data parsed. '''
+	def __init__(self):
+		self.dirs = {}
+		self.filelist = []
+		self.level = 0
+		self.pwd = None
+		self.cache_basedir = "{0}/.cache/RecipeHealer".format(os.getenv("HOME"))
+		HTMLParser.__init__(self)
+
+	def handle_starttag(self, tag, attrs):
+		if tag == "a":
+			try:
+				target = [attr[1] for attr in attrs if attr[0] == "href"][0]
+				if target[0] != "/" and not "?" in target:
+					if self.level == 0:
+						self.dirs[target] = []
+					elif self.level == 1:
+						self.dirs[self.pwd].append(target)
+					elif self.level == 2:
+						self.filelist.append(target)
+			except IndexError as e:
+				pass
+
+	def mkcache(self):
+		if os.path.exists(self.cachedir):
+			return self
+
+		# Fetch /pool/main/*/*
+		print("Parsing {0}...".format(self.baseuri))
+		main_html = URI(self.baseuri).download()
+		self.feed(str(main_html))
+		for direntry in self.dirs.keys():
+			self.level, self.pwd = 1, direntry
+			print("Parsing {0}/{1}/...".format(self.baseuri, direntry))
+			sub_html = URI("{0}/{1}/".format(self.baseuri, direntry)).download()
+			self.feed(str(sub_html))
+
+			for subdirentry in self.dirs[direntry]:
+				subdir = self.cachedir + "/" + direntry + "/" + subdirentry
+				if os.path.exists(subdir):
+					print("{} already exists, skipping".format(subdir))
+					continue
+
+				os.makedirs(subdir)
+				self.level, self.filelist = 2, []
+				print("Parsing {0}/{1}/{2}/...".format(self.baseuri, direntry, subdirentry))
+				file_html = URI("{0}/{1}/{2}/".format(self.baseuri, direntry, subdirentry)).download()
+				self.feed(str(file_html))
+
+				for filename in self.filelist:
+					if filename.endswith("/"):
+						os.makedirs(subdir + "/" + filename)
+					else:
+						open(subdir + "/" + filename, "a").close()
+		return self
+
+	def find(self, recipe):
+		raise NotImplementedError
+
+
+class DebianCache(Cache):
+	''' Parser for the Debian package repository '''
+	def __init__(self):
+		Cache.__init__(self)
+		self.cachedir = "{0}/debian".format(self.cache_basedir)
+		self.baseuri = "http://http.debian.net/debian/pool/main/"
+
+	def debname(self, fname):
+		tar = fname.find(".tar.")
+		if tar > 0:
+		    return "{0}.orig{1}".format(fname[:tar], fname[tar:])
+		parts = os.path.splitext(fname)
+		return "{0}.orig{1}".format(parts[0], parts[1])
+
+	def find(self, recipe):
+		tarball = recipe.tarballs[0]
+		if len(tarball) > 0:
+			fname = self.debname(tarball)
+			search_pattern = "{0}/{1}/{2}*/*[!deb\|dsc]".format(self.cachedir, recipe.program.lower()[0], recipe.program.lower())
+			results = [os.path.basename(x) for x in glob.glob(search_pattern)]
+			if tarball in results:
+				subdir = glob.glob("{0}/{1}/{2}*/{3}".format(self.cachedir, recipe.program.lower()[0], recipe.program.lower(), tarball))[0]
+				return self.baseuri + subdir.replace(self.cachedir, "")
+			if fname in results:
+				subdir = glob.glob("{0}/{1}/{2}*/{3}".format(self.cachedir, recipe.program.lower()[0], recipe.program.lower(), fname))[0]
+				return self.baseuri + subdir.replace(self.cachedir, "")
+			fname = fname.replace("-", "_")
+			if fname in results:
+				subdir = glob.glob("{0}/{1}/{2}*/{3}".format(self.cachedir, recipe.program.lower()[0], recipe.program.lower(), fname))[0]
+				return self.baseuri + subdir.replace(self.cachedir, "")
+		return None
+
+
+class FedoraCache(Cache):
+	''' Parser for the Fedora package repository '''
+	def __init__(self):
+		Cache.__init__(self)
+		self.cachedir = "{0}/fedora".format(self.cache_basedir)
+		self.baseuri = "http://pkgs.fedoraproject.org/repo/pkgs/"
+
+	def find(self, recipe):
+		tarball, filemd5 = recipe.tarballs[0], recipe.md5s[0]
+		if len(tarball) > 0 and len(filemd5):
+			search_pattern = "{0}/{1}/{2}/{3}".format(self.cachedir, recipe.program.lower(), tarball, filemd5)
+			results = [os.path.basename(x) for x in glob.glob(search_pattern)]
+			if len(results):
+			    return "{0}/{1}/{2}/{3}/{4}".format(self.baseuri, recipe.program.lower(), tarball, filemd5, tarball)
+		elif len(tarball) > 0:
+			search_pattern = "{0}/{1}/{2}/*[!md5]".format(self.cachedir, recipe.program.lower(), tarball, filemd5)
+			results = [os.path.basename(x) for x in glob.glob(search_pattern)]
+			if len(results):
+			    return "{0}/{1}/{2}/{3}/{4}".format(self.baseuri, recipe.program.lower(), tarball, results[0], tarball)
+		return None
+
+
+################
+# Main operation
+################
+
+def main():
+	commands = {"check": CheckCommand, "heal": HealCommand}
+	if len(sys.argv) != 2 or not sys.argv[1] in commands.keys():
+		print("Syntax: {} <command>\n".format(sys.argv[0]))
+		print("Available commands are:")
+		print("  check            Check the health of all recipes")
+		print("  heal             Attempt to heal broken recipes\n")
+		sys.exit(1)
+
+	logfile = "health.log"
+	cmd = commands[sys.argv[1]](logfile)
+	cmd.run()
+
+if __name__ == "__main__":
+    main()
+
+# vim: noexpandtab tabstop=4 shiftwidth=4:
