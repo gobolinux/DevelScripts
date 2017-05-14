@@ -8,6 +8,7 @@
 from multiprocessing import Pool, cpu_count
 from configparser import ConfigParser
 from itertools import repeat
+from packaging import version
 import subprocess
 import hashlib
 import glob
@@ -171,7 +172,10 @@ class Recipe:
 		if not os.path.exists(destdir):
 			os.makedirs(destdir)
 		with open(destfile, "w") as f:
-			f.write("wget {}\n".format(mirror_url))
+			if mirror_url.startswith("/home/gobolinux"):
+				f.write("cp {} .".format(mirror_url))
+			else:
+				f.write("wget {}\n".format(mirror_url))
 		os.chmod(destfile, 0o755)
 
 	def tarballInfo(self):
@@ -449,7 +453,7 @@ class HealCommand:
 		with open(self.logfile, "r") as f:
 			recipes = [Recipe().fromHealthLog(line) for line in f.readlines()]
 
-		caches = [DebianCache().mkcache(), FedoraCache().mkcache()]
+		caches = [DebianCache().mkcache(), FedoraCache().mkcache(), GoboLinuxOrgCache()]
 		for recipe in [x for x in recipes if x.health[0] != "True"]:
 			for cache in caches:
 				alt_url = cache.find(recipe)
@@ -578,17 +582,106 @@ class FedoraCache(Cache):
 		return None
 
 
+class GoboLinuxOrgCache(Cache):
+	''' Parser for old.gobolinux.org/sources '''
+	def __init__(self):
+		Cache.__init__(self)
+		self.cachefile = "gobolinux.org-sources.txt"
+		self.cachedfiles = [x.strip("\n") for x in open(self.cachefile).readlines()]
+
+	def find(self, recipe):
+		tarball = recipe.tarballs[0]
+		if tarball in self.cachedfiles:
+			return "/home/gobolinux/old.gobolinux.org/sources/{}".format(tarball)
+		return None
+
+
+#######################
+# Stats command handler
+#######################
+
+class StatsCommand:
+	def __init__(self, logfile):
+		self.logfile = logfile
+
+	def run(self):
+		with open(self.logfile, "r") as f:
+			recipes = [Recipe().fromHealthLog(line) for line in f.readlines()]
+
+		print("<html>")
+		print("Healthy recipes:                 <b>{}</b><br>".format(self.__healthyCount(recipes)))
+		print("HTTP error 3xx (Redirect):       <b>{}</b><br>".format(self.__httpErrorCount(recipes, "300") + self.__httpErrorCount(recipes, "302")))
+		print("HTTP error 400 (Bad request):    <b>{}</b><br>".format(self.__httpErrorCount(recipes, "400")))
+		print("HTTP error 401 (Unauthorized):   <b>{}</b><br>".format(self.__httpErrorCount(recipes, "401")))
+		print("HTTP error 403 (Forbidden):      <b>{}</b><br>".format(self.__httpErrorCount(recipes, "403")))
+		print("HTTP error 404 (Not found):      <b>{}</b><br>".format(self.__httpErrorCount(recipes, "404")))
+		print("HTTP error 406 (Not acceptable): <b>{}</b><br>".format(self.__httpErrorCount(recipes, "406")))
+		print("HTTP error 410 (Gone):           <b>{}</b><br>".format(self.__httpErrorCount(recipes, "410")))
+		print("HTTP error 5xx (Server error):   <b>{}</b><br>".format(self.__httpErrorCount(recipes, "500") + self.__httpErrorCount(recipes, "502")))
+		print("Unreachable CVS repository:      <b>{}</b><br>".format(self.__vcsErrorCount(recipes, "cvs")))
+		print("Unreachable SVN repository:      <b>{}</b><br>".format(self.__vcsErrorCount(recipes, "svn")))
+		print("Unreachable GIT repository:      <b>{}</b><br>".format(self.__vcsErrorCount(recipes, "git")))
+		print("<br>")
+
+		# Print programs from well behaved repositories
+		programs = self.__groupRecipesByProgram(recipes)
+		for program in sorted(programs.keys()):
+			if len(programs[program]) >= 3 and len(programs[program]) == self.__healthyCount(programs[program]):
+				print("<b>{0}</b> has <b>{1}</b> versions, all of which are healthy<br>".format(program, len(programs[program])))
+		print("<br>")
+
+		# Print programs whose last release is reachable, but whose previous releases are not
+		for program in sorted(programs.keys()):
+			num_healthy = self.__healthyCount(programs[program])
+			if num_healthy >= 1 and len(programs[program]) >= 3 and len(programs[program]) != num_healthy:
+			#	print("{0} has {1} versions, of which {2} {3} healthy".format(program, len(programs[program]), num_healthy, "is" if num_healthy == 1 else "are"))
+				print("<b>{0}</b>\t{1}<br>".format(program, self.__makeHistoryLine(programs[program])))
+		print("<br>")
+		print("</html>")
+
+	def __makeHistoryLine(self, recipes):
+		hist = ""
+		for recipe in recipes:
+			if recipe.health[0] == "True":
+				hist += '<font color="green">{}</font>, '.format(recipe.version)
+			else:
+				hist += '<font color="red">{}</font>, '.format(recipe.version)
+		return hist.strip(",")
+
+	def __groupRecipesByProgram(self, recipes):
+		programs = {}
+		for recipe in recipes:
+			if not recipe.program in programs:
+				programs[recipe.program] = [recipe]
+			else:
+				programs[recipe.program].append(recipe)
+		# Sort lists in-place based on the version element
+		for program in programs.keys():
+			programs[program].sort(key=lambda x: version.parse(x.version))
+		return programs
+
+	def __healthyCount(self, recipes):
+		return sum([1 if x.health[0] == "True" else 0 for x in recipes])
+
+	def __httpErrorCount(self, recipes, error):
+		return sum([1 if x.health[0] == error else 0 for x in recipes])
+
+	def __vcsErrorCount(self, recipes, version):
+		return sum([1 if x.health[0] == "False" and x.version == version else 0 for x in recipes])
+
+
 ################
 # Main operation
 ################
 
 def main():
-	commands = {"check": CheckCommand, "heal": HealCommand}
+	commands = {"check": CheckCommand, "heal": HealCommand, "stats": StatsCommand}
 	if len(sys.argv) != 2 or not sys.argv[1] in commands.keys():
 		print("Syntax: {} <command>\n".format(sys.argv[0]))
 		print("Available commands are:")
 		print("  check            Check the health of all recipes")
-		print("  heal             Attempt to heal broken recipes\n")
+		print("  heal             Attempt to heal broken recipes")
+		print("  stats            Show statistics on the health of recipes\n")
 		sys.exit(1)
 
 	logfile = "health.log"
