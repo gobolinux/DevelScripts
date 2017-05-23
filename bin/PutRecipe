@@ -127,3 +127,23 @@ if git push
 then Log_Normal "Submitted $program $version."
 else Die "Failed submitting $program $version."
 fi
+
+Log_Normal "Populating mirror_url cache..."
+recipeFile="$entry/$version/Recipe"
+url=$(sed -n 's,url=['\''"]\(.*\)['\''"]$,\1,p;s,url=\(.*\),\1,p' "$recipeFile")
+mirrorUrlDir="/home/gobolinux/gobolinux.org/mirror_url"
+tarball=$(basename "$url")
+tarballPathname="$mirrorUrlDir/$program/$version/$tarball"
+if [ -e "$tarballPathname" ]
+then
+   echo "Already downloaded $tarball for $entry $version"
+   exit 0
+fi
+if [[ ! "$tarball" =~ (tar.gz|tgz|tar.bz2|tbz|tbz2|zip|tar.xz|tar.lzma|tar.lz)$ ]]
+then
+   echo "Unknown archive extension in $tarball for $entry $version, will not populate mirror_url"
+   exit 0
+fi
+
+ssh gobolinux@gobolinux.org mkdir -p $(dirname "$tarballPathname")
+ssh gobolinux@gobolinux.org wget --output-document="$tarballPathname" -o /dev/null "$url" &
