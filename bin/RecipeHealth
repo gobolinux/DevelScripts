@@ -186,7 +186,7 @@ class Recipe:
 			md5s = [""] * len(urls)
 		return urls, sizes, md5s
 
-	def fromHealthLog(self, line):
+	def fromHealthLog(self, line, check_mirror_html=False):
 		tokens = line.strip("\n").split(",")
 		self.program = tokens[0]
 		self.version = tokens[1]
@@ -195,6 +195,8 @@ class Recipe:
 		self.md5s = [tokens[4]]
 		self.health = [tokens[5]]
 		self.tarballs = [os.path.basename(self.urls[0])]
+		if check_mirror_html and os.path.exists("mirror_url/{0}/{1}".format(self.program, self.version)):
+			self.health[0] = "True"
 		return self
 
 	def fromDirectory(self, recipedir, configparser):
@@ -609,9 +611,10 @@ class StatsCommand:
 
 	def run(self):
 		with open(self.logfile, "r") as f:
-			recipes = [Recipe().fromHealthLog(line) for line in f.readlines()]
+			recipes = [Recipe().fromHealthLog(line, False) for line in f.readlines()]
 
 		print("<html>")
+		print("<h2>Summary</h2><br>")
 		print("Healthy recipes:                 <b>{}</b><br>".format(self.__healthyCount(recipes)))
 		print("HTTP error 3xx (Redirect):       <b>{}</b><br>".format(self.__httpErrorCount(recipes, "300") + self.__httpErrorCount(recipes, "302")))
 		print("HTTP error 400 (Bad request):    <b>{}</b><br>".format(self.__httpErrorCount(recipes, "400")))
@@ -624,20 +627,26 @@ class StatsCommand:
 		print("Unreachable CVS repository:      <b>{}</b><br>".format(self.__vcsErrorCount(recipes, "cvs")))
 		print("Unreachable SVN repository:      <b>{}</b><br>".format(self.__vcsErrorCount(recipes, "svn")))
 		print("Unreachable GIT repository:      <b>{}</b><br>".format(self.__vcsErrorCount(recipes, "git")))
+		print("Other unnamed errors:            <b>{}</b><br>".format(self.__otherErrorCount(recipes)))
 		print("<br>")
 
-		# Print programs from well behaved repositories
+		print("<h2>Recipes from stable repositories</h2><br>")
 		programs = self.__groupRecipesByProgram(recipes)
 		for program in sorted(programs.keys()):
 			if len(programs[program]) >= 3 and len(programs[program]) == self.__healthyCount(programs[program]):
 				print("<b>{0}</b> has <b>{1}</b> versions, all of which are healthy<br>".format(program, len(programs[program])))
 		print("<br>")
 
-		# Print programs whose last release is reachable, but whose previous releases are not
+		print("<h2>Recipes with more than 3 versions and at least one broken URL</h2><br>")
 		for program in sorted(programs.keys()):
 			num_healthy = self.__healthyCount(programs[program])
-			if num_healthy >= 1 and len(programs[program]) >= 3 and len(programs[program]) != num_healthy:
-			#	print("{0} has {1} versions, of which {2} {3} healthy".format(program, len(programs[program]), num_healthy, "is" if num_healthy == 1 else "are"))
+			if len(programs[program]) >= 3 and len(programs[program]) != num_healthy:
+				print("<b>{0}</b>\t{1}<br>".format(program, self.__makeHistoryLine(programs[program])))
+		print("<br>")
+		
+		print("<h2>Recipes whose most recent version is broken</h2><br>")
+		for program in sorted(programs.keys()):
+			if programs[program][-1].health[0] != "True":
 				print("<b>{0}</b>\t{1}<br>".format(program, self.__makeHistoryLine(programs[program])))
 		print("<br>")
 		print("</html>")
@@ -649,7 +658,7 @@ class StatsCommand:
 				hist += '<font color="green">{}</font>, '.format(recipe.version)
 			else:
 				hist += '<font color="red">{}</font>, '.format(recipe.version)
-		return hist.strip(",")
+		return hist.strip(", ")
 
 	def __groupRecipesByProgram(self, recipes):
 		programs = {}
@@ -672,6 +681,8 @@ class StatsCommand:
 	def __vcsErrorCount(self, recipes, version):
 		return sum([1 if x.health[0] == "False" and x.version == version else 0 for x in recipes])
 
+	def __otherErrorCount(self, recipes):
+		return sum([1 if x.health[0] == "False" and x.version not in ["cvs","svn","git"] else 0 for x in recipes])
 
 ################
 # Main operation
