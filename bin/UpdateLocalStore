@@ -35,6 +35,7 @@ scriptExample=""
 
 Parse_Options "$@"
 
+Parse_Conf CompileGit.conf
 
 ###############################################################################
 
