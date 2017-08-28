@@ -24,20 +24,18 @@ export goboPrefix=/home/gobolinux/Rootless
 source ScriptFunctions
 Import GoboLinux
 Import File
-Import Subversion
 Import OptionParser
 
 ### Options ###################################################################
 
-scriptDescription="Update a local store based on svn repository."
-scriptCredits="Copyright (C) 2007 Hisham Muhammad. Released under the GNU GPL."
+scriptDescription="Update a local store based on git repository."
+scriptCredits="Copyright (C) 2007-2017 Hisham Muhammad. Released under the GNU GPL."
 scriptUsage=""
 scriptExample=""
-Add_Option_Boolean "U" "skip-update" "Do not resync svn tree with 'svn up'"
 
 Parse_Options "$@"
 
-Parse_Conf CompileSubversion.conf
+Parse_Conf CompileGit.conf
 
 ###############################################################################
 
