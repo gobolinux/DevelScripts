@@ -130,7 +130,7 @@ fi
 
 Log_Normal "Populating mirror_url cache..."
 recipeFile="$entry/$version/Recipe"
-url=$(sed -n 's,url=['\''"]\(.*\)['\''"]$,\1,p;s,url=\(.*\),\1,p' "$recipeFile")
+url=$(sed -n 's,^url=['\''"]\(.*\)['\''"]$,\1,p;s,url=\(.*\),\1,p' "$recipeFile")
 mirrorUrlDir="/home/gobolinux/gobolinux.org/mirror_url"
 tarball=$(basename "$url")
 tarballPathname="$mirrorUrlDir/$program/$version/$tarball"
