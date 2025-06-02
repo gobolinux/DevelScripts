@@ -1,0 +1,52 @@
+#!/usr/bin/env python3
+
+# Updates a GoboLinux Dependencies file to reflect the latest installed
+# versions of each program found in /Programs.
+#
+# For each dependency listed, this script finds the newest installed version
+# and rewrites the file accordingly. Useful for keeping package recipes up-to-date.
+#
+# Usage: UpdateDependencies <Dependencies file>
+
+import os
+import sys
+from glob import glob
+from GuessLatest import GuessLatests
+
+def main():
+    if len(sys.argv) != 2:
+        print("Syntax: {} <Dependencies file>".format(sys.argv[0]))
+        sys.exit(1)
+
+    with open(sys.argv[1], "r") as f:
+        new_deps = ""
+        for line in f.readlines():
+            # Chop comments
+            line = line.split("#")[0].strip("\n")
+            print(line)
+
+            # Get program and version
+            pv = line.split()
+            if len(pv) == 1:
+                new_deps += f"{line}\n"
+                continue
+            elif len(pv) == 2:
+                program, condition, version = pv[0], " ", pv[1]
+            elif len(pv) == 3:
+                program, condition, version = pv[0], " {} ".format(pv[1]), pv[2]
+
+            all_versions = [os.path.basename(x) for x in glob(f"/Programs/{program}/*")]
+            last_version = GuessLatest(all_versions)
+            if len(last_version) == 0:
+                # Program is not installed
+                sys.stderr.write(f"Warning: {program} is not installed at /Programs\n")
+
+            new_deps += f"{program}{condition}{last_version}\n"
+
+        print("-------------")
+        print(new_deps)
+        with open(sys.argv[1], "w") as f:
+            f.write(new_deps)
+
+if __name__ == "__main__":
+    main()
